@@ -358,7 +358,7 @@ void CDSPocketWebWindow::openWebAppletWindow(const QString &name, const QString 
     m_tabWidget->setCurrentWidget(m_appMdiArea); // 切到「网页」页签，让刚打开的网页可见
 }
 
-// 显示主窗口：托盘菜单「显示」与双击托盘图标都走这里。
+// 显示主窗口：托盘「显示」、双击托盘图标、以及「再次启动本程序」（单实例管道）三条路径都走这里。
 void CDSPocketWebWindow::showWindow()
 {
     // 从最小化/隐藏到托盘的状态恢复显示（保留之前的最大化状态）

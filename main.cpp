@@ -7,6 +7,8 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QIcon>
+#include <QLocalServer>
+#include <QLocalSocket>
 #include <QTranslator>
 #include <cstdio>
 #include <string>
@@ -140,8 +142,33 @@ int main(int argc, char *argv[])
     // 安装翻译：QCoreApplication::installTranslator 需要 app 实例，故在创建后调用
     QCoreApplication::installTranslator(&appTranslator);
 
-    // 说明：本程序**不限制实例数量**，可以同时打开多个（各窗口彼此独立）。
-    // 原先用命名管道做单实例、并把再次启动的实例合并到已有窗口，现已按要求取消。
+    // ---- 单实例：程序只能同时打开一个 ----
+    // 用命名管道检测：能连上说明已有实例在运行（QtNetwork，已链接）。
+    // 名称带 PocketWeb 前缀：与 DSH-Environment 各自独立，两个程序可同时运行。
+    const QString singletonKey = QStringLiteral("PocketWeb-SingleInstance");
+    QLocalSocket probe;
+    probe.connectToServer(singletonKey);
+    if (probe.waitForConnected(300)) {
+        // 已有实例（可能正最小化或隐藏在托盘里）：通知它激活主窗口，本实例随即退出。
+        //
+        // 先 AllowSetForegroundWindow(ASFW_ANY)：本实例是用户刚启动、当前持有前台焦点的
+        // 进程；Windows 的前台焦点保护会阻止后台进程把窗口提到最前（表现是任务栏图标
+        // 闪烁、窗口不起来）。由这个前台进程显式授权后，正在运行的那个实例调用
+        // activateWindow() 才能真正把窗口激活到最前。
+        //
+        // 再等一个 "ok" 应答：该授权在调用进程退出时失效，因此必须确认对方已经执行完
+        // showWindow()（即已经调用过 SetForegroundWindow）之后，本实例才退出 ——
+        // 否则会出现「权限刚授予、授权进程已退出」的竞态，窗口只能闪一下任务栏。
+        // 收不到应答也照常退出（超时 1 秒），不影响程序正常启动。
+        AllowSetForegroundWindow(ASFW_ANY);
+        probe.write("show");
+        probe.flush();
+        probe.waitForBytesWritten(300);
+        probe.waitForReadyRead(1000);
+        probe.readAll();
+        probe.disconnectFromServer();
+        return 0;
+    }
 
     // 程序图标：直接用嵌入 exe 的那枚应用图标（resources/app.ico → :/app.ico），
     // 与资源管理器里显示的 exe 图标完全一致
@@ -165,6 +192,33 @@ int main(int argc, char *argv[])
         "}"));
 
     CDSPocketWebWindow window;
+
+    // ---- 单实例服务端：收到其他实例的 "show" 消息 → 显示主窗口 ----
+    // 若 listen 失败（极端情况：管道残留或权限问题），程序照常运行，仅失去激活能力
+    QLocalServer singletonServer;
+    QLocalServer::removeServer(singletonKey); // 清理上次异常退出可能残留的管道
+    if (singletonServer.listen(singletonKey)) {
+        QObject::connect(&singletonServer, &QLocalServer::newConnection, &app,
+                         [&singletonServer, &window, &app]() {
+            while (singletonServer.hasPendingConnections()) {
+                QLocalSocket *sock = singletonServer.nextPendingConnection();
+                QObject::connect(sock, &QLocalSocket::readyRead, &app,
+                                 [sock, &window]() {
+                    const QByteArray msg = sock->readAll();
+                    if (msg.contains("show")) {
+                        // 激活已有实例的主窗口（从最小化 / 托盘恢复）
+                        QMetaObject::invokeMethod(&window, "showWindow");
+                        // 回一个应答：新启动的实例收到后才退出，保证它授予的
+                        // “允许设置前台窗口”权限在本次激活期间仍然有效
+                        sock->write("ok");
+                        sock->flush();
+                    }
+                    sock->disconnectFromServer();
+                    sock->deleteLater();
+                });
+            }
+        });
+    }
 
     // ---- 左侧导航栏 ----
     // 第 0 部分：应用图标 + 三行文本；图标与 exe 程序图标用同一个 :/app.ico

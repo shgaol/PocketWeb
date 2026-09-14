@@ -50,9 +50,9 @@ QIcon makePocketWebIcon(const QColor &bg, int size = 64);
 //   - 双击托盘图标 = 「显示」；
 //   - 托盘图标由程序内绘制（makePocketWebIcon），不依赖外部图片资源。
 //
-// 说明：本程序**不限制实例数量**，可以同时打开多个（各窗口彼此独立）。
-// 原先「再次启动即激活已有实例」的命名管道单实例机制已按要求取消，
-// showWindow() 现在只由托盘菜单「显示」和托盘图标双击调用。
+// 「再次启动本程序即激活已有实例」由 main.cpp 的单实例管道完成：
+// 新实例发 "show" → 本窗口的 showWindow() 槽被调用（从最小化/托盘恢复并置前）。
+// 因此本程序**同时只能运行一个实例**。
 //
 // 与“网页小程序”功能直接相关的函数（openWebApplets / openWebAppletWindow /
 // appletTabIcon）照搬自 DSH-Environment 的 MainWindow，逻辑未做改动；
@@ -78,7 +78,7 @@ public:
     void openWebAppletWindow(const QString &name, const QString &url);
 
 private slots:
-    // 托盘菜单「显示」/ 双击托盘图标：从最小化或隐藏到托盘的状态恢复主窗口并置前
+    // 显示主窗口：托盘菜单「显示」/ 双击托盘图标 / 单实例管道收到 "show" 都会走这里
     void showWindow();
     // 托盘菜单「退出」：真正结束程序（区别于关闭窗口 = 隐藏到托盘）
     void quitApplication();
