@@ -1,0 +1,11 @@
+// resources/app.rc
+// 应用图标：把 resources/app.ico 嵌入生成的 exe，
+// 使资源管理器中显示的 exe 图标 = 窗口图标 = 侧边栏 InfoIcon
+// （蓝色圆角方块 + 白色字母 P）。
+//
+// app.ico 不直接提交到源码树，而是由 cmake/make_app_icon.ps1 在 CMake 配置阶段生成，
+// 画法与 NavBar/UINavBarItem.cpp 的 CUINavBarItem::makeLetterIcon() 完全一致；
+// 想换图标时删掉 resources/app.ico 后重新配置（或直接替换该文件）即可。
+//
+// 由 CMake 自动编译（MSVC 用 rc.exe，MinGW 用 windres）。路径相对于本文件所在目录。
+1 ICON "app.ico"
