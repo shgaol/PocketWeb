@@ -19,6 +19,7 @@
 #include <QHBoxLayout>
 #include <QMdiArea>
 #include <QMdiSubWindow>
+#include <QMargins>
 #include <QMenu>
 #include <QPixmap>
 #include <QResizeEvent>
@@ -453,10 +454,36 @@ void CDSPocketWebWindow::detachWebAppletNow(QMdiSubWindow *subWindow)
 
     m_webWindows.insert(key, detached);
 
-    // 放到光标处，让光标正落在这个新窗口的标题栏上
+    // 放到光标处，并让光标落在新窗口的**标题栏**上（这样用户可以接着往下拖）。
+    //
+    // 这里刻意**不做**“按边框公式推算位置”的写法，而是两步都以实测为准 ——
+    // 因为 QWidget::move() 是按客户区还是按边框定位、以及 frameMargins() 里
+    // DWM 隐形拉伸边框怎么折算，都极易算错（前两版就先后偏到了下方、再偏到上方）：
+    //   ① 先按光标大致摆一下并 show()，让窗口的边框几何真正成形；
+    //   ② 量出窗口当前的**边框左上角**，再把它整体平移到目标位置。
+    //      “窗口整体平移 Δ ⇒ 边框也平移 Δ”，所以第 ② 步与 move() 的语义无关，结果精确。
     const QPoint cursor = QCursor::pos();
-    detached->move(cursor - QPoint(60, 12));
-    detached->show();
+
+    detached->move(cursor - QPoint(60, 0)); // ① 大致摆到光标处
+    detached->show();                       //    真正显示：此后几何/边距才准确
+
+    // 标题栏高度：用 frameMargins() —— Qt 的定义里它已经减去了 DWM 的隐形拉伸边框，
+    // 所以它的 top 就是「可见标题栏」的高度；取不到时退回当前样式值。
+    int titleBarHeight = detached->style()->pixelMetric(QStyle::PM_TitleBarHeight);
+    if (QWindow *handle = detached->windowHandle()) {
+        const QMargins margins = handle->frameMargins();
+        if (margins.top() > 0) {
+            titleBarHeight = margins.top();
+        }
+    }
+
+    // ② 目标：光标位于「距窗口左边框 60px、标题栏竖向中间」
+    //    ⇒ 目标边框左上 = 光标 − (60, 标题栏高/2)
+    const QPoint targetFrameTopLeft = cursor - QPoint(60, titleBarHeight / 2);
+    const QPoint delta = targetFrameTopLeft - detached->frameGeometry().topLeft();
+    if (!delta.isNull()) {
+        detached->move(detached->pos() + delta);
+    }
 
     // 无缝衔接：把接下来的移动交给系统，等价于“用户此刻正按住它的标题栏”。
     // 左键此刻仍按着，所以能接上（Qt 的实现是 ReleaseCapture + PostMessage
